@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Casino Lobby</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #0d1b2a;
+      color: #f0f0f0;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .card {
+      max-width: 600px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+    }
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      border-radius: 4px;
+      border: 1px solid #415a77;
+      background: #1b263b;
+      color: #fff;
+      margin-bottom: 12px;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 4px;
+      background: #778da9;
+      color: #0d1b2a;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:disabled,
+    a.disabled {
+      background: #415a77;
+      color: #9da9bb;
+      cursor: not-allowed;
+      pointer-events: none;
+      text-decoration: none;
+    }
+    .game-links {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      margin: 20px 0;
+    }
+    a.game-link {
+      display: block;
+      text-align: center;
+      padding: 12px;
+      border-radius: 4px;
+      background: #fca311;
+      color: #0d1b2a;
+      font-weight: bold;
+      text-decoration: none;
+      transition: transform 0.1s ease-in-out;
+    }
+    a.game-link:hover {
+      transform: translateY(-2px);
+    }
+    .status {
+      min-height: 24px;
+      margin-top: 10px;
+      color: #f8c537;
+    }
+    .balance-display {
+      font-size: 1.2rem;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Casino Lobby</h1>
+  <div class="card">
+    <label for="username">Username</label>
+    <input id="username" type="text" placeholder="Enter username" autocomplete="off" />
+    <button id="loadProfile">Load Profile</button>
+
+    <div class="balance-display" id="profileInfo">Not logged in.</div>
+
+    <div class="game-links">
+      <a class="game-link disabled" data-base="slots.html" href="#">Slots</a>
+      <a class="game-link disabled" data-base="highlow.html" href="#">High / Low</a>
+      <a class="game-link disabled" data-base="coinflip.html" href="#">Coin Flip</a>
+      <a class="game-link" data-base="admin.html" href="admin.html">Admin Dashboard</a>
+    </div>
+
+    <button id="saveExit" disabled>Save &amp; Exit</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    function getUsernameFromQuery() {
+      const params = new URLSearchParams(window.location.search);
+      const value = params.get('u');
+      if (!value) return null;
+      const trimmed = value.trim();
+      return trimmed ? trimmed : null;
+    }
+
+    const usernameInput = document.getElementById('username');
+    const loadButton = document.getElementById('loadProfile');
+    const profileInfo = document.getElementById('profileInfo');
+    const statusEl = document.getElementById('status');
+    const saveButton = document.getElementById('saveExit');
+    const gameLinks = Array.from(document.querySelectorAll('.game-link')).filter(link => link.dataset.base !== 'admin.html');
+
+    let currentUser = null;
+    let currentBalance = 0;
+
+    function setStatus(message, isError = false) {
+      statusEl.textContent = message || '';
+      statusEl.style.color = isError ? '#ff6b6b' : '#f8c537';
+    }
+
+    function updateProfileDisplay() {
+      if (!currentUser) {
+        profileInfo.textContent = 'Not logged in.';
+        saveButton.disabled = true;
+        gameLinks.forEach(link => {
+          link.href = '#';
+          link.classList.add('disabled');
+        });
+        return;
+      }
+      profileInfo.textContent = `Logged in as: ${currentUser} | Balance: ${currentBalance} credits`;
+      saveButton.disabled = false;
+      gameLinks.forEach(link => {
+        link.href = `${link.dataset.base}?u=${encodeURIComponent(currentUser)}`;
+        link.classList.remove('disabled');
+      });
+    }
+
+    async function loadProfile(username) {
+      try {
+        setStatus('Loading profile...');
+        const res = await fetch(`/api/profile?username=${encodeURIComponent(username)}`);
+        const data = await res.json();
+        if (!data.ok) {
+          throw new Error(data.message || 'Failed to load profile.');
+        }
+        currentUser = data.username;
+        currentBalance = data.balance;
+        usernameInput.value = currentUser;
+        updateProfileDisplay();
+        setStatus('Profile loaded.');
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    }
+
+    loadButton.addEventListener('click', () => {
+      const username = usernameInput.value.trim();
+      if (!username) {
+        setStatus('Please enter a username.', true);
+        return;
+      }
+      loadProfile(username);
+    });
+
+    saveButton.addEventListener('click', async () => {
+      if (!currentUser) return;
+      try {
+        setStatus('Saving profile...');
+        const res = await fetch('/api/profile/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: currentUser, balance: currentBalance })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          throw new Error(data.message || 'Failed to save profile.');
+        }
+        setStatus('Profile saved. Safe travels!');
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    });
+
+    const queryUser = getUsernameFromQuery();
+    if (queryUser) {
+      usernameInput.value = queryUser;
+      loadProfile(queryUser);
+    }
+  </script>
+</body>
+</html>

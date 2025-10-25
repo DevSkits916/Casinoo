@@ -1,0 +1,50 @@
+{
+  "players": {
+    "alice": {
+      "balance": 1250,
+      "history": [
+        {
+          "ts": "2024-05-01T12:00:00.000Z",
+          "game": "admin-adjust",
+          "delta": 250,
+          "desc": "initial top-up"
+        },
+        {
+          "ts": "2024-05-02T15:30:00.000Z",
+          "game": "slots",
+          "delta": -50,
+          "desc": "bet on triple cherries"
+        },
+        {
+          "ts": "2024-05-02T15:31:00.000Z",
+          "game": "slots",
+          "delta": 100,
+          "desc": "slots payout"
+        }
+      ]
+    },
+    "bob": {
+      "balance": 900,
+      "history": [
+        {
+          "ts": "2024-05-03T18:10:00.000Z",
+          "game": "highlow",
+          "delta": -100,
+          "desc": "high/low bet"
+        },
+        {
+          "ts": "2024-05-03T18:10:05.000Z",
+          "game": "highlow",
+          "delta": 200,
+          "desc": "high/low win"
+        },
+        {
+          "ts": "2024-05-04T10:05:00.000Z",
+          "game": "coinflip",
+          "delta": -200,
+          "desc": "coin flip bet"
+        }
+      ]
+    }
+  }
+}

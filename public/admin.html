@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Dashboard</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 20px;
+    }
+    .panel {
+      background: rgba(15, 23, 42, 0.8);
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    tr:hover {
+      background: rgba(59, 130, 246, 0.2);
+      cursor: pointer;
+    }
+    .history {
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 10px;
+      background: rgba(15, 23, 42, 0.6);
+    }
+    .history-entry {
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding: 8px 0;
+    }
+    .history-entry:last-child {
+      border-bottom: none;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+    }
+    input[type="number"],
+    input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(15, 23, 42, 0.9);
+      color: #e2e8f0;
+      margin-bottom: 12px;
+    }
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      background: #38bdf8;
+      color: #0f172a;
+      margin-right: 10px;
+    }
+    button.danger {
+      background: #f87171;
+      color: #0f172a;
+    }
+    .status {
+      min-height: 24px;
+      color: #facc15;
+      margin-top: 10px;
+    }
+    .empty-state {
+      color: #94a3b8;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <h1>Admin Dashboard</h1>
+  <div class="grid">
+    <div class="panel">
+      <h2>Players</h2>
+      <table id="usersTable">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Balance</th>
+          </tr>
+        </thead>
+        <tbody id="usersBody">
+        </tbody>
+      </table>
+      <div id="usersEmpty" class="empty-state" style="display:none;">No users available.</div>
+    </div>
+    <div class="panel">
+      <h2>User Detail</h2>
+      <div id="detail">
+        <p>Select a user to view their details.</p>
+      </div>
+      <div class="status" id="status"></div>
+      <div id="actions" style="display:none; margin-top: 20px;">
+        <h3>Admin Actions</h3>
+        <label for="balanceInput">Set Balance</label>
+        <input type="number" id="balanceInput" min="0" />
+        <label for="noteInput">Note</label>
+        <input type="text" id="noteInput" placeholder="Reason for adjustment" />
+        <div>
+          <button id="setBalanceBtn">Set Balance</button>
+          <button class="danger" id="deleteUserBtn">Delete User</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function getUsernameFromQuery() {
+      const params = new URLSearchParams(window.location.search);
+      const value = params.get('u');
+      if (!value) return null;
+      const trimmed = value.trim();
+      return trimmed ? trimmed : null;
+    }
+
+    const usersBody = document.getElementById('usersBody');
+    const usersEmpty = document.getElementById('usersEmpty');
+    const detail = document.getElementById('detail');
+    const statusEl = document.getElementById('status');
+    const actions = document.getElementById('actions');
+    const balanceInput = document.getElementById('balanceInput');
+    const noteInput = document.getElementById('noteInput');
+    const setBalanceBtn = document.getElementById('setBalanceBtn');
+    const deleteUserBtn = document.getElementById('deleteUserBtn');
+
+    let selectedUser = null;
+
+    function setStatus(message, isError = false) {
+      statusEl.textContent = message || '';
+      statusEl.style.color = isError ? '#f87171' : '#facc15';
+    }
+
+    function renderHistory(history) {
+      if (!history || history.length === 0) {
+        return '<div class="empty-state">No transactions recorded.</div>';
+      }
+      return history
+        .slice()
+        .reverse()
+        .map(entry => {
+          const sign = entry.delta > 0 ? '+' : '';
+          return `
+            <div class="history-entry">
+              <div><strong>${entry.ts}</strong></div>
+              <div>${entry.game} — ${sign}${entry.delta}</div>
+              <div>${entry.desc}</div>
+            </div>
+          `;
+        })
+        .join('');
+    }
+
+    function renderUserDetail(username, player) {
+      const historyHtml = renderHistory(player.history);
+      detail.innerHTML = `
+        <p><strong>Username:</strong> ${username}</p>
+        <p><strong>Balance:</strong> ${player.balance} credits</p>
+        <div class="history">
+          ${historyHtml}
+        </div>
+      `;
+      actions.style.display = 'block';
+      balanceInput.value = player.balance;
+      noteInput.value = '';
+    }
+
+    async function loadUsers() {
+      try {
+        const res = await fetch('/api/admin/users');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'Failed to load users');
+        usersBody.innerHTML = '';
+        if (data.users.length === 0) {
+          usersEmpty.style.display = 'block';
+        } else {
+          usersEmpty.style.display = 'none';
+          data.users.sort((a, b) => a.username.localeCompare(b.username));
+          data.users.forEach(user => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${user.username}</td><td>${user.balance}</td>`;
+            tr.addEventListener('click', () => selectUser(user.username));
+            usersBody.appendChild(tr);
+          });
+        }
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    }
+
+    async function selectUser(username) {
+      try {
+        setStatus('Loading user detail...');
+        const res = await fetch(`/api/admin/user-detail?username=${encodeURIComponent(username)}`);
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'Failed to load user detail');
+        selectedUser = data.username;
+        renderUserDetail(data.username, { balance: data.balance, history: data.history });
+        setStatus('User detail loaded.');
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    }
+
+    setBalanceBtn.addEventListener('click', async () => {
+      if (!selectedUser) {
+        setStatus('Select a user first.', true);
+        return;
+      }
+      const balance = parseInt(balanceInput.value, 10);
+      const note = noteInput.value.trim() || 'admin adjustment';
+      if (!Number.isFinite(balance) || balance < 0) {
+        setStatus('Enter a valid non-negative balance.', true);
+        return;
+      }
+      try {
+        setStatus('Saving balance...');
+        const res = await fetch('/api/admin/set-balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: selectedUser, balance, note })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'Failed to set balance');
+        setStatus('Balance updated.');
+        await loadUsers();
+        await selectUser(selectedUser);
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    });
+
+    deleteUserBtn.addEventListener('click', async () => {
+      if (!selectedUser) {
+        setStatus('Select a user first.', true);
+        return;
+      }
+      if (!confirm(`Delete user ${selectedUser}? This cannot be undone.`)) {
+        return;
+      }
+      try {
+        setStatus('Deleting user...');
+        const res = await fetch('/api/admin/delete-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: selectedUser })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'Failed to delete user');
+        setStatus('User deleted.');
+        selectedUser = null;
+        detail.innerHTML = '<p>Select a user to view their details.</p>';
+        actions.style.display = 'none';
+        await loadUsers();
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    });
+
+    loadUsers().then(() => {
+      const autoUser = getUsernameFromQuery();
+      if (autoUser) {
+        selectUser(autoUser);
+      }
+    });
+  </script>
+</body>
+</html>
