@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Coin Flip</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: 'Segoe UI', sans-serif;
+      background: radial-gradient(circle, #003049, #001219);
+      color: #e0fbfc;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: rgba(0, 0, 0, 0.45);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+    }
+    h1 {
+      text-align: center;
+      margin-top: 0;
+    }
+    .balance {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 1.1rem;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 20px;
+      align-items: flex-end;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+    }
+    input[type="number"] {
+      padding: 10px;
+      width: 140px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      text-align: center;
+    }
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      color: #001219;
+      background: #ffb703;
+    }
+    button.choice {
+      min-width: 120px;
+    }
+    button:disabled {
+      background: rgba(255, 255, 255, 0.3);
+      color: rgba(0,0,0,0.4);
+      cursor: not-allowed;
+    }
+    .result {
+      text-align: center;
+      min-height: 28px;
+      margin-top: 20px;
+      color: #ffd166;
+    }
+    a {
+      color: #90e0ef;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Coin Flip</h1>
+    <div class="balance" id="balance">Loading...</div>
+    <div class="controls">
+      <div>
+        <label for="wager">Wager</label>
+        <input type="number" id="wager" value="50" min="1" />
+      </div>
+      <button class="choice" id="headsBtn">Heads</button>
+      <button class="choice" id="tailsBtn">Tails</button>
+    </div>
+    <div class="result" id="result"></div>
+    <div style="text-align: center; margin-top: 20px;">
+      <a id="backLink" href="lobby.html">&larr; Back to Lobby</a>
+    </div>
+  </div>
+
+  <script>
+    function getUsernameFromQuery() {
+      const params = new URLSearchParams(window.location.search);
+      const value = params.get('u');
+      if (!value) return null;
+      const trimmed = value.trim();
+      return trimmed ? trimmed : null;
+    }
+
+    const username = getUsernameFromQuery();
+    if (!username) {
+      window.location.href = 'lobby.html';
+    }
+
+    const balanceEl = document.getElementById('balance');
+    const wagerInput = document.getElementById('wager');
+    const headsBtn = document.getElementById('headsBtn');
+    const tailsBtn = document.getElementById('tailsBtn');
+    const resultEl = document.getElementById('result');
+    const backLink = document.getElementById('backLink');
+
+    backLink.href = `lobby.html?u=${encodeURIComponent(username)}`;
+
+    let currentBalance = 0;
+
+    function setResult(message, isError = false) {
+      resultEl.textContent = message;
+      resultEl.style.color = isError ? '#ff6b6b' : '#ffd166';
+    }
+
+    function updateBalanceDisplay() {
+      balanceEl.textContent = `Player: ${username} — Balance: ${currentBalance} credits`;
+      validateButtons();
+    }
+
+    function validateButtons() {
+      const wager = parseInt(wagerInput.value, 10);
+      const disabled = !Number.isFinite(wager) || wager <= 0 || wager > currentBalance;
+      headsBtn.disabled = disabled;
+      tailsBtn.disabled = disabled;
+    }
+
+    wagerInput.addEventListener('input', validateButtons);
+    validateButtons();
+
+    async function fetchProfile() {
+      try {
+        const res = await fetch(`/api/profile?username=${encodeURIComponent(username)}`);
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'Failed to load profile');
+        currentBalance = data.balance;
+        updateBalanceDisplay();
+      } catch (err) {
+        setResult(err.message, true);
+      }
+    }
+
+    async function handleChoice(choice) {
+      setResult('');
+      const wager = parseInt(wagerInput.value, 10);
+      if (!Number.isFinite(wager) || wager <= 0) {
+        setResult('Enter a valid wager.', true);
+        return;
+      }
+
+      try {
+        const chargeRes = await fetch('/api/game/charge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            game: 'coinflip',
+            amount: wager,
+            desc: 'coin flip bet'
+          })
+        });
+        const chargeData = await chargeRes.json();
+        if (!chargeData.ok) {
+          if (chargeData.error === 'INSUFFICIENT_FUNDS') {
+            setResult('Insufficient credits for that wager.', true);
+          } else {
+            setResult(chargeData.message || 'Unable to place bet.', true);
+          }
+          return;
+        }
+        currentBalance = chargeData.balance;
+        updateBalanceDisplay();
+
+        const flip = Math.random() < 0.5 ? 'heads' : 'tails';
+        const flipLabel = flip.toUpperCase();
+        if (flip === choice) {
+          const payout = wager * 2;
+          const payoutRes = await fetch('/api/game/payout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username,
+              game: 'coinflip',
+              amount: payout,
+              desc: 'coin flip win'
+            })
+          });
+          const payoutData = await payoutRes.json();
+          if (!payoutData.ok) {
+            setResult(payoutData.message || 'Error paying winnings.', true);
+            await fetchProfile();
+          } else {
+            currentBalance = payoutData.balance;
+            updateBalanceDisplay();
+            setResult(`Coin: ${flipLabel}. You chose ${flipLabel}. You win ${payout} credits!`);
+          }
+        } else {
+          setResult(`Coin: ${flipLabel}. You chose ${choice.toUpperCase()}. You lose.`);
+        }
+      } catch (err) {
+        setResult(err.message, true);
+      }
+    }
+
+    headsBtn.addEventListener('click', () => handleChoice('heads'));
+    tailsBtn.addEventListener('click', () => handleChoice('tails'));
+
+    fetchProfile();
+  </script>
+</body>
+</html>

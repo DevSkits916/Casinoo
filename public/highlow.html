@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>High / Low</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #0b3954, #1c7293);
+      color: #f1faee;
+    }
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+    }
+    h1 {
+      text-align: center;
+      margin-top: 0;
+    }
+    .balance {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 1.1rem;
+    }
+    .card-display {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 4rem;
+      margin: 20px 0;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+      align-items: flex-end;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+    }
+    input[type="number"] {
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      width: 140px;
+      text-align: center;
+    }
+    button {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      color: #0b3954;
+      background: #ffb703;
+    }
+    button:disabled {
+      background: rgba(255, 255, 255, 0.3);
+      color: rgba(0,0,0,0.4);
+      cursor: not-allowed;
+    }
+    .result {
+      text-align: center;
+      min-height: 28px;
+      margin-top: 20px;
+      color: #ffdd57;
+    }
+    a {
+      color: #8ecae6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>High / Low</h1>
+    <div class="balance" id="balance">Loading...</div>
+    <div class="card-display">
+      Current Card: <span id="currentCard" style="margin-left: 12px; font-weight: bold;">?</span>
+    </div>
+    <div class="controls">
+      <div>
+        <label for="wager">Wager</label>
+        <input type="number" id="wager" value="50" min="1" />
+      </div>
+      <button id="higherBtn">Higher</button>
+      <button id="lowerBtn">Lower</button>
+    </div>
+    <div class="result" id="result"></div>
+    <div style="text-align: center; margin-top: 20px;">
+      <a id="backLink" href="lobby.html">&larr; Back to Lobby</a>
+    </div>
+  </div>
+
+  <script>
+    function getUsernameFromQuery() {
+      const params = new URLSearchParams(window.location.search);
+      const value = params.get('u');
+      if (!value) return null;
+      const trimmed = value.trim();
+      return trimmed ? trimmed : null;
+    }
+
+    const username = getUsernameFromQuery();
+    if (!username) {
+      window.location.href = 'lobby.html';
+    }
+
+    const balanceEl = document.getElementById('balance');
+    const currentCardEl = document.getElementById('currentCard');
+    const wagerInput = document.getElementById('wager');
+    const higherBtn = document.getElementById('higherBtn');
+    const lowerBtn = document.getElementById('lowerBtn');
+    const resultEl = document.getElementById('result');
+    const backLink = document.getElementById('backLink');
+
+    backLink.href = `lobby.html?u=${encodeURIComponent(username)}`;
+
+    let currentBalance = 0;
+    let currentCard = null;
+
+    function randomCard() {
+      return Math.floor(Math.random() * 13) + 1;
+    }
+
+    function cardLabel(value) {
+      const labels = {
+        1: 'A',
+        11: 'J',
+        12: 'Q',
+        13: 'K'
+      };
+      return labels[value] || value;
+    }
+
+    function setResult(message, isError = false) {
+      resultEl.textContent = message;
+      resultEl.style.color = isError ? '#ff6b6b' : '#ffdd57';
+    }
+
+    function updateBalanceDisplay() {
+      balanceEl.textContent = `Player: ${username} — Balance: ${currentBalance} credits`;
+      validateButtons();
+    }
+
+    function validateButtons() {
+      const wager = parseInt(wagerInput.value, 10);
+      const disabled = !Number.isFinite(wager) || wager <= 0 || wager > currentBalance;
+      higherBtn.disabled = disabled;
+      lowerBtn.disabled = disabled;
+    }
+
+    wagerInput.addEventListener('input', validateButtons);
+    validateButtons();
+
+    async function fetchProfile() {
+      try {
+        const res = await fetch(`/api/profile?username=${encodeURIComponent(username)}`);
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'Failed to load profile');
+        currentBalance = data.balance;
+        updateBalanceDisplay();
+      } catch (err) {
+        setResult(err.message, true);
+      }
+    }
+
+    function setCurrentCard(value) {
+      currentCard = value;
+      currentCardEl.textContent = cardLabel(value);
+    }
+
+    async function handleGuess(type) {
+      setResult('');
+      const wager = parseInt(wagerInput.value, 10);
+      if (!Number.isFinite(wager) || wager <= 0) {
+        setResult('Enter a valid wager.', true);
+        return;
+      }
+      if (currentCard === null) {
+        setResult('Current card not ready yet.', true);
+        return;
+      }
+
+      try {
+        const chargeRes = await fetch('/api/game/charge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            game: 'highlow',
+            amount: wager,
+            desc: 'high/low bet'
+          })
+        });
+        const chargeData = await chargeRes.json();
+        if (!chargeData.ok) {
+          if (chargeData.error === 'INSUFFICIENT_FUNDS') {
+            setResult('Insufficient credits for that wager.', true);
+          } else {
+            setResult(chargeData.message || 'Unable to place bet.', true);
+          }
+          return;
+        }
+        currentBalance = chargeData.balance;
+        updateBalanceDisplay();
+
+        const nextCard = randomCard();
+        const nextLabel = cardLabel(nextCard);
+        const guessWord = type === 'higher' ? 'HIGHER' : 'LOWER';
+
+        let winnings = 0;
+        if (type === 'higher' && nextCard > currentCard) {
+          winnings = wager * 2;
+        } else if (type === 'lower' && nextCard < currentCard) {
+          winnings = wager * 2;
+        }
+
+        if (nextCard === currentCard) {
+          setResult(`You guessed ${guessWord}. Next card: ${nextLabel}. Tie goes to the house.`);
+        } else if (winnings > 0) {
+          const payoutRes = await fetch('/api/game/payout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username,
+              game: 'highlow',
+              amount: winnings,
+              desc: 'high/low win'
+            })
+          });
+          const payoutData = await payoutRes.json();
+          if (!payoutData.ok) {
+            setResult(payoutData.message || 'Error paying winnings.', true);
+            await fetchProfile();
+          } else {
+            currentBalance = payoutData.balance;
+            updateBalanceDisplay();
+            setResult(`You guessed ${guessWord}. Next card: ${nextLabel}. You win ${winnings} credits!`);
+          }
+        } else {
+          setResult(`You guessed ${guessWord}. Next card: ${nextLabel}. You lose.`);
+        }
+
+        setCurrentCard(nextCard);
+      } catch (err) {
+        setResult(err.message, true);
+      }
+    }
+
+    higherBtn.addEventListener('click', () => handleGuess('higher'));
+    lowerBtn.addEventListener('click', () => handleGuess('lower'));
+
+    fetchProfile().then(() => {
+      setCurrentCard(randomCard());
+      validateButtons();
+    });
+  </script>
+</body>
+</html>
